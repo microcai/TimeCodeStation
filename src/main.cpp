@@ -25,6 +25,8 @@ void setup()
 	esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
 	esp_netif_sntp_init(&config);
 
+	sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
+
 	esp_netif_sntp_start();
 
 	if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK)
@@ -34,6 +36,9 @@ void setup()
 		// wm.resetSettings();
 		wm.reboot();
 	}
+
+	sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+
 }
 
 void loop()
