@@ -11,14 +11,17 @@
 #include "esp_netif_sntp.h"
 
 #include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
+#include "WiFiProvision.h"
 
 BPCTimeSender bpcstation;
 
 void setup()
 {
+	bpcstation.init();
 	Serial.begin(115200);
 
 	WiFiManager wm;
+
 
 	wm.autoConnect();
 
