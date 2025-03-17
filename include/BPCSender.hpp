@@ -1,6 +1,8 @@
 
 #pragma once
 
+#include <array>
+
 #include "driver/rmt_tx.h"
 #include "esp_log.h"
 
@@ -70,10 +72,8 @@ public:
     }
 
     // 调用本 api, 发送新编码的时间.
-    void start(uint64_t _sending_code)
+    void start(std::array<uint8_t, 19> sending_code)
     {
-        static const char symbolstr[] = {'0', '1', '2', '3'};
-
         static const rmt_symbol_word_t low_out_symbol = {
             .duration0 = 34250/2,
             .level0 = 0,
@@ -88,13 +88,12 @@ public:
             .level1 = 1,
         };
 
-        char encoded_str[20] = { 0 };
         for (int i=0; i < 19; i++)
         {
             // 每 10 个 symbol 表示 1s， 每 34250 tick 表示 0.1s
             // 0 = 0.1s, 1 = 0.2s , 2 = 0.3s 3 = 0.4s
 
-            uint32_t symbol =  (_sending_code >> ( 36 - i*2 ) )& 0x3;
+            uint32_t symbol = sending_code[i];
 
             uint32_t ticks_low = (symbol+1);
             uint32_t ticks_high = (9-symbol);
@@ -103,18 +102,14 @@ public:
             for (int j=0; j < 10; j++)
             {
                 if (j < ticks_low)
-                    sending_code[i*10+j] = low_out_symbol;
+                sending_symbols[i*10+j] = low_out_symbol;
                 else
-                 sending_code[i*10+j] = high_out_symbol;
+                sending_symbols[i*10+j] = high_out_symbol;
             }
             // 0 = 0.1s, 1 = 0.2s , 2 = 0.3s 3 = 0.4s
-
-            encoded_str[i] = symbolstr[symbol];
         }
 
-        printf("encoding BPC symbol %s\n", encoded_str);
-
-        auto result = rmt_transmit(tx_channel, bpc_encoder, sending_code, sizeof(sending_code), &transmit_config);
+        auto result = rmt_transmit(tx_channel, bpc_encoder, sending_symbols, sizeof(sending_symbols), &transmit_config);
         printf("rmt_transmit result with %d\n", result);
 
         if (ESP_OK != result)
@@ -122,7 +117,7 @@ public:
             rmt_disable(tx_channel);
             rmt_enable(tx_channel);
 
-            ESP_ERROR_CHECK(rmt_transmit(tx_channel, bpc_encoder, this, sizeof(*this), &transmit_config));
+            ESP_ERROR_CHECK(rmt_transmit(tx_channel, bpc_encoder, sending_symbols, sizeof(sending_symbols), &transmit_config));
         }
     }
 
@@ -143,6 +138,6 @@ private:
     rmt_encoder_handle_t bpc_encoder;
 
     // 待发送的代码
-    rmt_symbol_word_t sending_code[19*10];
+    rmt_symbol_word_t sending_symbols[19*10];
 };
 

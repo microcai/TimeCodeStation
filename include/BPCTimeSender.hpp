@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 
+#include <array>
+
 #include "BPCSender.hpp"
 
 #include <time.h>
@@ -22,7 +24,7 @@ static inline int parity_bit(uint64_t x) {
 }
 
 // 一共  38bit, 外加 1秒 帧空格，需要20s发送
-static void bpc_encode(struct tm tm_time, uint64_t& outencode)
+static std::array<uint8_t, 19> bpc_encode(struct tm tm_time)
 {
     // 基础时间参数转换
     const int year = tm_time.tm_year + 1900 - 2000;  // 基于2000年的偏移
@@ -68,7 +70,19 @@ static void bpc_encode(struct tm tm_time, uint64_t& outencode)
     encoded |= year >> 6; // 年的第7位
     encoded <<=1;
     encoded |= parity_bit(encoded & 0x3FFFE); // 偶校验位
-    outencode = encoded;
+
+    std::array<uint8_t, 19> result;
+    for (int i=0; i < 19; i++)
+    {
+        // 每 10 个 symbol 表示 1s， 每 34250 tick 表示 0.1s
+        // 0 = 0.1s, 1 = 0.2s , 2 = 0.3s 3 = 0.4s
+
+        uint32_t symbol =  (encoded >> ( 36 - i*2 ) )& 0x3;
+
+        result[i] = symbol;
+    }
+
+    return result;
 }
 
 // 这个类依赖系统时间运行，因此需确保启用 SNTP 服务
@@ -119,14 +133,18 @@ public:
                     time_t broad_cast_timepoint = tv_now.tv_sec;
                     // 在 59s 的时候，开始设置
                     the_time = *localtime(&broad_cast_timepoint);
-                    bpc_encode(the_time, this->encoded_bpc_data);
-                    printf(" %d:%d:%d bpc encoded as %x %x\n", the_time.tm_hour, the_time.tm_min, the_time.tm_sec, encoded_bpc_data, encoded_bpc_data >> 32);
+                    encoded_bpc_data = bpc_encode(the_time);
+
+                    char bpc_data_as_string[20] = {0};
+                    std::transform(encoded_bpc_data.begin(), encoded_bpc_data.end(),std::begin(bpc_data_as_string), [](auto symbol){
+                        return static_cast<char>(symbol + '0');
+                    });
+                    printf(" %d:%d:%d bpc encoded as %s\n", the_time.tm_hour, the_time.tm_min, the_time.tm_sec, bpc_data_as_string);
 
                     gettimeofday(&tv_now, NULL);
                     // 计算 剩余微秒数, 到 999980 微秒的时候，触发定时器.
                     // 999980 - tv_now.tv_usec
                     auto RESULT = esp_timer_start_once(wake_up_timer, 999980 - tv_now.tv_usec);
-                    printf("esp_timer_start_once delay %d, result = %d\n", 999980 - tv_now.tv_usec, RESULT);
 
                     vTaskDelay(500 / portTICK_PERIOD_MS);
                     break;
@@ -144,7 +162,11 @@ public:
 private:
     inline void timer_fireup()
     {
-        printf("start sending BPC code %x %x\n", encoded_bpc_data, encoded_bpc_data >> 32);
+        char bpc_data_as_string[20] = {0};
+        std::transform(encoded_bpc_data.begin(), encoded_bpc_data.end(),std::begin(bpc_data_as_string), [](auto symbol){
+            return static_cast<char>(symbol + '0');
+        });
+        printf("start sending BPC code %s\n", bpc_data_as_string);
         bpc_sender.start(encoded_bpc_data);
     }
     static void timer_fireup(void* arg)
@@ -152,7 +174,7 @@ private:
         reinterpret_cast<BPCTimeSender*>(arg)->timer_fireup();
     }
 
-    uint64_t encoded_bpc_data;
+    std::array<uint8_t, 19> encoded_bpc_data;
     esp_timer_handle_t wake_up_timer;
     BPCSender bpc_sender;
 };
